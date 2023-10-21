@@ -1,0 +1,70 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - release
+  pull_request:
+    branches:
+      - release
+
+jobs:
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  build:
+    name: Docker Image CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Login to Docker Hub
+        run: docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build the Docker image
+        run: |
+          docker build . --file Dockerfile --tag gikundi/app-name-service:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/app-name-service:latest
+
+  test:
+    name: Docker Image Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run tests on the Docker image
+        run: |
+          docker run ${{ secrets.DOCKERHUB_USERNAME }}/app-name-service:latest npm test --coverage
+           
+      - name: Check Test Results and Send Slack Notification (Failure)
+        if: ${{ failure() && !cancelled() }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_TITLE: Job status
+          SLACK_MESSAGE: 'Test failed for some reason'
+          SLACK_COLOR: '#FF0000'
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Check Test Results and Send Slack Notification (Success)
+        if: ${{ success() && !cancelled() }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_TITLE: Job status
+          SLACK_MESSAGE: 'All tests passed successfully'
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+
+        
